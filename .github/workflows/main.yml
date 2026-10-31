@@ -1,0 +1,64 @@
+
+name: Android Build (Auto Extract ZIP)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Android Project ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p incoming
+          ZIP_FILE="$(find incoming -maxdepth 1 -type f -iname '*.zip' | head -n 1 || true)"
+
+          if [ -n "$ZIP_FILE" ]; then
+            mkdir -p /tmp/android-project
+            unzip -q "$ZIP_FILE" -d /tmp/android-project
+
+            PROJECT_DIR="/tmp/android-project"
+            if [ ! -f "$PROJECT_DIR/gradlew" ]; then
+              PROJECT_DIR="$(find /tmp/android-project -name gradlew -type f -printf '%h\n' | head -n 1)"
+            fi
+
+            if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/gradlew" ]; then
+              echo "Android Gradle project not found"
+              exit 1
+            fi
+
+            rsync -a "$PROJECT_DIR"/ ./
+          fi
+
+          test -f ./gradlew
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FC-SPORT-LIVE-TV-APK
+          path: app/build/outputs/apk/debug/*.apk
